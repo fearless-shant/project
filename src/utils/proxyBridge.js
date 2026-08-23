@@ -1,9 +1,19 @@
+// SOCKS5 proxy bridge for MongoDB through HTTP CONNECT proxy
+// To re-enable proxy support, uncomment the code in db/index.js and .env
+// and ensure the 'socks' npm package is installed.
+
 import net from "node:net"
 import http from "node:http"
 
+/**
+ * Opens an HTTP CONNECT tunnel through the configured proxy.
+ * @param {string} host - Destination host (shard hostname)
+ * @param {number} port - Destination port (usually 27017)
+ * @returns {Promise<import('net').Socket>} Upstream socket
+ */
 function openHttpTunnel(host, port) {
   return new Promise((resolve, reject) => {
-    const proxyHost = process.env.PROXY_HOST
+    const proxyHost = process.env.PROXY_HOST // e.g. "172.31.100.27"
     const proxyPort = Number(process.env.PROXY_PORT) || 3128
     const auth = "Basic " + Buffer.from(
       `${process.env.PROXY_USERNAME}:${process.env.PROXY_PASSWORD}`
@@ -16,7 +26,6 @@ function openHttpTunnel(host, port) {
       headers: {
         Host: `${host}:${port}`,
         "Proxy-Authorization": auth,
-        "Proxy-Connection": "keep-alive",
       },
     })
     req.setTimeout(15000, () => req.destroy(new Error("proxy CONNECT timeout")))
@@ -35,6 +44,11 @@ function openHttpTunnel(host, port) {
   })
 }
 
+/**
+ * Parses a SOCKS5 request buffer from a client.
+ * @param {Buffer} buffer - Raw SOCKS5 data
+ * @returns {{host: string, port: number, headerLen: number}|null}
+ */
 function parseSocksRequest(buffer) {
   if (buffer.length < 4) return null
   const ver = buffer[0]
@@ -73,56 +87,62 @@ function parseSocksRequest(buffer) {
   return { host, port, headerLen }
 }
 
+/**
+ * Starts a local SOCKS5 server that forwards connections
+ * through the HTTP CONNECT proxy defined in .env.
+ * @returns {{port: number, close: () => void}} Port and close function
+ */
 function startSocksBridgeForHttpProxy() {
   return new Promise((resolve, reject) => {
-    const server = net.createServer((client) => {
-      let buffer = Buffer.alloc(0)
-      let handshaked = false
-      let connected = false
-
-      const fail = (code) => {
-        if (!connected) client.end(Buffer.from([0x05, code, 0x00, 0x01, 0, 0, 0, 0, 0, 0]))
-        client.destroy()
-      }
-
-      client.on("error", () => {})
-      client.on("data", (chunk) => {
-        if (connected) return
-        buffer = Buffer.concat([buffer, chunk])
-        if (!handshaked) {
-          if (buffer.length < 2) return
-          const nMethods = buffer[1]
-          if (buffer.length < 2 + nMethods) return
-          const methods = buffer.subarray(2, 2 + nMethods)
-          buffer = buffer.subarray(2 + nMethods)
-          if (!methods.includes(0x00)) return fail(0xff)
-          handshaked = true
-          client.write(Buffer.from([0x05, 0x00]))
-        }
-        try {
-          const target = parseSocksRequest(buffer)
-          if (!target) return
-          openHttpTunnel(target.host, target.port)
-            .then((upstream) => {
-              client.write(Buffer.from([0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0]))
-              connected = true
-              const rest = buffer.subarray(target.headerLen)
-              buffer = Buffer.alloc(0)
-              if (rest.length > 0) upstream.write(rest)
-              upstream.pipe(client)
-              client.pipe(upstream)
-            })
-            .catch(() => fail(0x05))
-        } catch (e) {
-          if (e.badRequest) fail(0x07)
-          else fail(0x08)
-        }
-      })
-    })
-    server.on("error", reject)
-    server.listen(0, "127.0.0.1", () =>
-      resolve({ port: server.address().port, close: () => server.close() })
-    )
+    // TODO: Uncomment and use this when re-enabling proxy
+    // const server = net.createServer((client) => {
+    //   let buffer = Buffer.alloc(0)
+    //   let handshaked = false
+    //   let connected = false
+    //
+    //   const fail = (code) => {
+    //     if (!connected) client.end(Buffer.from([0x05, code, 0x00, 0x01, 0, 0, 0, 0, 0, 0]))
+    //     client.destroy()
+    //   }
+    //
+    //   client.on("error", () => {})
+    //   client.on("data", (chunk) => {
+    //     if (connected) return
+    //     buffer = Buffer.concat([buffer, chunk])
+    //     if (!handshaked) {
+    //       if (buffer.length < 2) return
+    //       const nMethods = buffer[1]
+    //       if (buffer.length < 2 + nMethods) return
+    //       const methods = buffer.subarray(2, 2 + nMethods)
+    //       buffer = buffer.subarray(2 + nMethods)
+    //       if (!methods.includes(0x00)) return fail(0xff)
+    //       handshaked = true
+    //       client.write(Buffer.from([0x05, 0x00]))
+    //     }
+    //     try {
+    //       const target = parseSocksRequest(buffer)
+    //       if (!target) return
+    //       openHttpTunnel(target.host, target.port)
+    //         .then((upstream) => {
+    //           client.write(Buffer.from([0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0]))
+    //           connected = true
+    //           const rest = buffer.subarray(target.headerLen)
+    //           buffer = Buffer.alloc(0)
+    //           if (rest.length > 0) upstream.write(rest)
+    //           upstream.pipe(client)
+    //           client.pipe(upstream)
+    //         })
+    //         .catch(() => fail(0x05))
+    //     } catch (e) {
+    //       if (e.badRequest) fail(0x07)
+    //       else fail(0x08)
+    //     }
+    //   })
+    // })
+    // server.on("error", reject)
+    // server.listen(0, "127.0.0.1", () =>
+    //   resolve({ port: server.address().port, close: () => server.close() })
+    // )
   })
 }
 

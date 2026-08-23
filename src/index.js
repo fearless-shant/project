@@ -2,9 +2,20 @@
 import dotenv from "dotenv" 
 import mongoose from "mongoose"
 import connectDB from "./db/index.js"
-import app from "./app.js"
+import { app } from "./app.js"
 
-
+/**
+ * To re-enable proxy support (when at college/network with HTTP proxy):
+ * 1. Uncomment the proxyOptions block below
+ * 2. Uncomment the PROXY_* lines in .env
+ * 3. Run: npm install socks
+ * const proxyOptions = {}
+ * if (process.env.PROXY_HOST) {
+ *     const bridge = await startSocksBridgeForHttpProxy()
+ *     proxyOptions.proxyHost = "127.0.0.1"
+ *     proxyOptions.proxyPort = bridge.port
+ * }
+ */
 
 dotenv.config({
     path: './.env'
@@ -20,37 +31,3 @@ connectDB()
 .catch((err)=>{
     console.log("MONGO db connection failed !!! ",err);
 })
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-/* ;(async()=>{
-     try{
-         await mongoose.connect(`${process.env.MONGODB_URI}/${DB_NAME}`)
-         app.on("error",(error)=>{
-             console.log("ERRR: ",error);
-             throw error
-         })
-         // for catching error incase the app aint able to connect to sever
-         app.listen(process.env.PORT,()=>{
-             console.log(`App is listening port ${process.env.PORT}`);
-         })
-     }catch(error){
-         console.error("ERROR: ",error)
-         throw error
-     }
- })()*/
